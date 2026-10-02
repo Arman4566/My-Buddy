@@ -21,7 +21,8 @@ Snap or upload a photo of a textbook page or diagram and get notes, Q&A, flashca
 3. The topic is shown so the student can fix it. Then the server calls **SerpApi Google Search** and **SerpApi YouTube**.
 4. `server/src/generate.js` turns the results into notes, Q&A, flashcards and MCQs with plain code (no AI model).
 5. Results are cached in Postgres by topic for 7 days (saves SerpApi credits).
-
+## Try it by yourself
+only at https://my-buddy-k65a.onrender.com/
 ## Run locally
 ```bash
 cp server/.env.example server/.env     # add SERPAPI_KEY (DATABASE_URL optional)
