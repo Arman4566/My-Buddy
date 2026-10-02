@@ -15,6 +15,17 @@ Snap or upload a photo of a textbook page or diagram and get notes, Q&A, flashca
 - "Go deeper" topic bubbles that start a new study pack
 - Floating focus timer (25 min focus, 5 min break) that earns XP
 
+## New in v3
+- **Smarter photos:** the image is cleaned up for OCR, headings are found by text size, key phrases are ranked, and the text from the page itself is used to build notes, flashcards, Q&A and quiz questions. Students can pick the topic and fix the OCR text.
+- **＋ More buttons** on every tab (notes, Q&A, flashcards, quiz questions, videos). Each press runs one SerpApi search from a new angle and skips anything already shown.
+- **SEO:** per-page title, description, canonical, Open Graph and Twitter tags, JSON-LD (WebApplication, FAQPage, BreadcrumbList), crawlable HTML for every page, `/robots.txt`, `/sitemap.xml`, shareable `/study/<topic>` pages, gzip and caching.
+- **Safety:** per-visitor rate limit on anything that spends SerpApi credits. Photo-based packs are never cached or made public.
+
+## SEO notes
+- Set `PUBLIC_URL` to your real https address so canonical links, the sitemap and share images are correct.
+- Topic pages (`/study/<topic>`) need the Postgres database. They are created from topics people search by typing.
+- After deploying, add your site in Google Search Console and submit `https://YOUR-SITE/sitemap.xml`.
+
 ## How it works
 1. The photo is resized in the browser. **Tesseract.js** (an open-source library, not an API) reads any text.
 2. If there is no readable text, **SerpApi Google Lens** identifies the picture.

@@ -6,8 +6,8 @@ const api_key = () => {
   return process.env.SERPAPI_KEY;
 };
 
-export const searchGoogle = (q) =>
-  getJson({ engine: "google", q, hl: "en", api_key: api_key() });
+export const searchGoogle = (q, extra = {}) =>
+  getJson({ engine: "google", q, hl: "en", ...extra, api_key: api_key() });
 
 export const searchYouTube = (q) =>
   getJson({ engine: "youtube", search_query: q, api_key: api_key() });

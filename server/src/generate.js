@@ -6,7 +6,9 @@ const STOP = new Set(
   "about above after again against because before being below between could does doing during each from further have having here itself just more most other over same should some such than that their them then there these they this those through under until very were what when where which while with would your into also been both only will can may many much".split(" ")
 );
 
-const clean = (s = "") => String(s).replace(/\s+/g, " ").trim();
+import { stripLatex, isFormulaLike } from "./latex.js";
+
+const clean = (s = "") => stripLatex(String(s)).replace(/\s+/g, " ").trim();
 const short = (s, n = 150) => (s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s);
 const uniq = (a) => [...new Set(a)];
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -35,45 +37,81 @@ function overviewParagraphs(web) {
     .filter(Boolean);
 }
 
-export function buildStudyPack(topic, web, yt) {
+export const norm = (s = "") => String(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 70);
+
+const DEF_RE = /^(?:the\s+)?([A-Z][A-Za-z0-9'\- ]{2,45}?)\s+(?:is|are|refers to|means|is defined as|can be defined as|is called|are called)\s+(.{12,240})$/;
+
+// Understand the text read from a student's own page: key sentences and "X is Y" definitions.
+export function fromText(text, topic = "") {
+  const flat = clean(String(text || "").replace(/-\n(?=[a-z])/g, "").replace(/\n+/g, " "));
+  const sentences = uniq(sentencesOf(flat));
+  const freq = new Map();
+  const wordsOf = (s) => (s.toLowerCase().match(/[a-z][a-z'-]{3,}/g) || []).filter((w) => !STOP.has(w));
+  sentences.forEach((s) => wordsOf(s).forEach((w) => freq.set(w, (freq.get(w) || 0) + 1)));
+  const topicWords = new Set(wordsOf(topic));
+  const ranked = sentences
+    .map((s, i) => {
+      const ws = wordsOf(s);
+      const base = ws.reduce((a, w) => a + (freq.get(w) || 0), 0) / Math.sqrt(ws.length || 1);
+      const bonus = ws.some((w) => topicWords.has(w)) ? 3 : 0;
+      return { s, i, score: base + bonus };
+    })
+    .sort((a, b) => b.score - a.score);
+  const keyPoints = ranked.slice(0, 8).sort((a, b) => a.i - b.i).map((x) => x.s);
+  const defs = sentences
+    .map((s) => {
+      const m = s.match(DEF_RE);
+      return m ? { term: clean(m[1]), sentence: s } : null;
+    })
+    .filter(Boolean);
+  return { sentences, keyPoints, defs };
+}
+
+export function buildStudyPack(topic, web, yt, context = "") {
   const kg = web.knowledge_graph || {};
   const box = web.answer_box || {};
   const overview = overviewParagraphs(web);
   const organic = (web.organic_results || []).filter((r) => r.snippet);
   const related = (web.related_searches || []).map((r) => r.query).filter(Boolean);
+  const page = context ? fromText(context, topic) : null;
 
   // ---- Notes
   const overviewPoints = uniq(
     [kg.description, box.answer || box.snippet, ...overview.slice(0, 5)].filter(Boolean).map(clean)
   );
-
   const notes = {
     title: kg.title || topic,
     sections: [
+      page?.keyPoints.length ? { heading: "From your page", points: page.keyPoints.slice(0, 6) } : null,
       { heading: "Overview", points: overviewPoints },
       { heading: "Key points", points: organic.slice(0, 5).map((r) => clean(r.snippet)) },
       related.length ? { heading: "Go deeper", points: related.slice(0, 6) } : null,
-    ].filter((s) => s && s.points.length),
+    ].filter((x) => x && x.points.length),
     sources: organic.slice(0, 5).map((r) => ({ title: siteless(r.title), link: r.link })),
   };
 
-  // ---- Q&A
-  const qna = (web.related_questions || [])
+  // ---- Q&A (the student's own page comes first)
+  const webQna = (web.related_questions || [])
     .map((q) => ({ question: clean(q.question), answer: clean(q.snippet || q.answer || "") }))
     .filter((q) => q.question && q.answer);
   const lead = kg.description || box.answer || box.snippet || overview[0];
-  if (lead) qna.unshift({ question: `What is ${kg.title || topic}?`, answer: clean(lead) });
+  if (lead) webQna.unshift({ question: `What is ${kg.title || topic}?`, answer: clean(lead) });
+  const pageQna = (page?.defs || []).slice(0, 5).map((d) => ({ question: `What is ${d.term}?`, answer: d.sentence }));
+  const qna = [...pageQna, ...webQna].filter((q, i, a) => a.findIndex((x) => norm(x.question) === norm(q.question)) === i);
 
   // ---- Flashcards
+  const pageCards = (page?.defs || []).slice(0, 6).map((d) => ({ front: d.term, back: short(d.sentence, 220) }));
   const flashcards = [
-    ...qna.map((q) => ({ front: q.question, back: short(q.answer, 220) })),
+    ...pageCards,
+    ...webQna.map((q) => ({ front: q.question, back: short(q.answer, 220) })),
     ...organic.slice(0, 6).map((r) => ({ front: siteless(r.title), back: short(clean(r.snippet), 220) })),
   ]
-    .filter((c, i, arr) => arr.findIndex((x) => x.front === c.front) === i)
-    .slice(0, 14);
+    .filter((c, i, a) => a.findIndex((x) => norm(x.front) === norm(c.front)) === i)
+    .slice(0, 16);
 
   // ---- MCQs
-  const mcqs = [...mcqsFromQna(qna), ...mcqsFromCloze(overviewPoints, organic, related)].slice(0, 8);
+  const pageMcqs = page ? mcqsFromCloze(page.sentences, [], related).slice(0, 4) : [];
+  const mcqs = [...pageMcqs, ...mcqsFromQna(webQna), ...mcqsFromCloze(overviewPoints, organic, related)].slice(0, 10);
 
   // ---- Videos
   const videos = (yt?.video_results || []).slice(0, 6).map((v) => ({
@@ -86,7 +124,7 @@ export function buildStudyPack(topic, web, yt) {
     published: v.published_date,
   }));
 
-  return { topic, notes, qna: qna.slice(0, 8), flashcards, mcqs, videos };
+  return { topic, notes, qna: qna.slice(0, 10), flashcards, mcqs, videos, fromPage: Boolean(page) };
 }
 
 // "Which answer is correct?" questions built from People-also-ask pairs.
@@ -111,8 +149,9 @@ function mcqsFromCloze(overviewPoints, organic, related) {
 
   const out = [];
   for (const s of sentences) {
+    if (isFormulaLike(s)) continue;
     const ws = words(s);
-    const candidates = ws.filter((w, i) => i > 0 && w.length > 5 && !STOP.has(w.toLowerCase()));
+    const candidates = ws.filter((w, i) => i > 0 && w.length > 5 && /^[A-Za-z][A-Za-z-]*$/.test(w) && !STOP.has(w.toLowerCase()));
     const answer =
       candidates.find((w) => /^[A-Z]/.test(w)) || [...candidates].sort((a, b) => b.length - a.length)[0];
     if (!answer) continue;
@@ -137,3 +176,5 @@ export function topicFromLens(lens) {
   const titles = (lens.visual_matches || []).map((m) => siteless(m.title)).filter(Boolean);
   return { topic: titles[0] || "", candidates: uniq(titles).slice(0, 5) };
 }
+
+export { clean, short, uniq, siteless, mcqsFromQna, mcqsFromCloze, overviewParagraphs };

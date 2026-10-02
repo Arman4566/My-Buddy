@@ -1,7 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Confetti from "./Confetti.jsx";
 
-export function Notes({ notes, onExplore }) {
+export function More({ kind, label, onMore, busy }) {
+  return (
+    <button className="more" onClick={() => onMore(kind)} disabled={busy === kind}>
+      {busy === kind ? "Finding more…" : `＋ More ${label}`}
+    </button>
+  );
+}
+
+export function Notes({ notes, onExplore, onMore, busy }) {
   return (
     <article className="notes">
       <h2>{notes.title}</h2>
@@ -22,6 +30,7 @@ export function Notes({ notes, onExplore }) {
           </section>
         )
       )}
+      <More kind="notes" label="notes" onMore={onMore} busy={busy} />
       {notes.sources.length > 0 && (
         <p className="sources">
           Sources:{" "}
@@ -37,7 +46,7 @@ export function Notes({ notes, onExplore }) {
   );
 }
 
-export function QnA({ qna }) {
+export function QnA({ qna, onMore, busy }) {
   if (!qna.length) return <p className="empty">No questions found for this topic. Try a broader topic.</p>;
   return (
     <div className="qna">
@@ -48,16 +57,26 @@ export function QnA({ qna }) {
           <p>{q.answer}</p>
         </details>
       ))}
+      <More kind="qna" label="Q&A" onMore={onMore} busy={busy} />
     </div>
   );
 }
 
-export function Flashcards({ cards, onXp }) {
+export function Flashcards({ cards, onXp, onMore, busy }) {
   const [queue, setQueue] = useState(cards);
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState(0);
 
-  useEffect(() => { setQueue(cards); setKnown(0); setFlipped(false); }, [cards]);
+  const prev = useRef(cards);
+  useEffect(() => {
+    const old = prev.current;
+    if (cards !== old && cards.length > old.length && cards[0] === old[0]) {
+      setQueue((q) => [...q, ...cards.slice(old.length)]); // new cards join the deck, progress is kept
+    } else if (cards !== old) {
+      setQueue(cards); setKnown(0); setFlipped(false);
+    }
+    prev.current = cards;
+  }, [cards]);
 
   const gotIt = () => { setQueue((q) => q.slice(1)); setKnown((k) => k + 1); setFlipped(false); onXp(2, "flashcard"); };
   const again = () => { setQueue((q) => [...q.slice(1), q[0]]); setFlipped(false); };
@@ -84,7 +103,10 @@ export function Flashcards({ cards, onXp }) {
         <div className="big">🎉</div>
         <h3>Deck complete!</h3>
         <p>You knew all {cards.length} cards.</p>
-        <button onClick={restart}>Study again</button>
+        <div className="row">
+          <button onClick={restart}>Study again</button>
+          <More kind="flashcards" label="flashcards" onMore={onMore} busy={busy} />
+        </div>
       </div>
     );
 
@@ -109,17 +131,23 @@ export function Flashcards({ cards, onXp }) {
         <button className="ghost small" onClick={shuffle}>Shuffle</button>
       </div>
       <p className="hint keys">Keys: Space flips · ← still learning · → got it</p>
+      <More kind="flashcards" label="flashcards" onMore={onMore} busy={busy} />
     </div>
   );
 }
 
-export function Quiz({ mcqs, onXp }) {
+export function Quiz({ mcqs, onXp, onMore, busy }) {
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState(null);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
   const [missed, setMissed] = useState([]);
   const [done, setDone] = useState(false);
+
+  // New questions added from the score screen continue the quiz.
+  useEffect(() => {
+    if (done && mcqs.length > i + 1) { setDone(false); setI(i + 1); setPicked(null); }
+  }, [mcqs.length]); // eslint-disable-line
 
   if (!mcqs.length) return <p className="empty">Not enough material for a quiz yet. Try a more specific topic.</p>;
 
@@ -142,7 +170,10 @@ export function Quiz({ mcqs, onXp }) {
             ))}
           </div>
         )}
-        <button onClick={reset}>Retake quiz</button>
+        <div className="row">
+          <button onClick={reset}>Retake quiz</button>
+          <More kind="mcqs" label="questions" onMore={onMore} busy={busy} />
+        </div>
       </div>
     );
   }
@@ -189,9 +220,10 @@ export function Quiz({ mcqs, onXp }) {
   );
 }
 
-export function Videos({ videos }) {
+export function Videos({ videos, onMore, busy }) {
   if (!videos.length) return <p className="empty">No videos found. Try different words.</p>;
   return (
+    <>
     <div className="videos">
       {videos.map((v, i) => (
         <a key={v.link} href={v.link} target="_blank" rel="noreferrer" className="video" style={{ "--i": i }}>
@@ -207,5 +239,7 @@ export function Videos({ videos }) {
         </a>
       ))}
     </div>
+    <More kind="videos" label="videos" onMore={onMore} busy={busy} />
+    </>
   );
 }
